@@ -50,7 +50,7 @@
             }
         </style>
     <![endif]-->
-    <r:require modules="gmap3,mapWithFeatures,knockout,datepicker,amplify,jqueryValidationEngine, projects, attachDocuments, wmd"/>
+    <r:require modules="gmap3,mapWithFeatures,knockout,datepicker,amplify,jqueryValidationEngine, projects, attachDocuments, wmd, magnific_poppup"/>
 </head>
 <body>
 <div id="spinner" class="spinner" style="position: fixed;top: 50%;left: 50%;margin-left: -50px;margin-top: -50px;text-align:center;z-index:1234;overflow: auto;width: 100px;height: 102px;">
@@ -99,13 +99,15 @@
         <li><a href="#plan" id="plan-tab" data-toggle="${tabIsActive}">Activities</a></li>
         <li><a href="#site" id="site-tab" data-toggle="${tabIsActive}">Sites</a></li>
         <li><a href="#dashboard" id="dashboard-tab" data-toggle="${tabIsActive}">Dashboard</a></li>
+        <li><a href="#documents" id="docs-tab" data-toggle="${tabIsActive}">Documents</a></li>
         <g:if test="${user?.isAdmin || user?.isCaseManager}"><li><a href="#admin" id="admin-tab" data-toggle="tab">Admin</a></li></g:if>
     </ul>
 
 
     <div class="tab-content" style="overflow:visible;display:none">
         <div class="tab-pane active" id="overview">
-            <!-- OVERVIEW -->
+            <g:render template="overview" model="[project:project]"/>
+            <!-- OVERVIEW
             <div class="row-fluid">
                 <div class="clearfix" data-bind="visible:organisation()||organisationName()">
                     <h4>
@@ -171,8 +173,9 @@
                     <p class="well well-small more" data-bind="text:description"></p>
                 </div>
             </div>
+
             <div class="row-fluid">
-                <!-- show any primary images -->
+
                 <div data-bind="visible:primaryImages() !== null,foreach:primaryImages,css:{span5:primaryImages()!=null}">
                     <div class="thumbnail with-caption space-after">
                         <img class="img-rounded" data-bind="attr:{src:url, alt:name}" alt="primary image"/>
@@ -181,7 +184,7 @@
                     </div>
                 </div>
 
-                <!-- show other documents -->
+
                 <div id="documents" data-bind="css: { span3: primaryImages() != null, span7: primaryImages() == null }">
                     <h4>Project documents</h4>
                     <div data-bind="visible:documents().length == 0">
@@ -203,8 +206,11 @@
                     </div>
                 </div>
             </div>
+            -->
         </div>
-
+        <div class="tab-pane" id="documents">
+            <g:render template="docs" model="[project:project]"/>
+        </div>
         <div class="tab-pane" id="details">
             <!-- Project Details -->
             <g:render template="projectDetails" model="[project: project]"/>
@@ -316,8 +322,20 @@
                             </div>
 
                             <div id="editProjectStories" class="pill-pane">
-                                <g:render plugin="fieldcapture-plugin" template="editProjectContent" model="${[attributeName:'projectStories', header:'Project stories']}"/>
+                                <ul id="tabs" class="nav nav-tabs" data-tabs="tabs">
+                                    <li class="active"><a href="#stories" data-toggle="tab">Stories</a></li>
+                                    <li><a href="#iframe" data-toggle="tab">Embed Videos</a></li>
+                                </ul>
+                                <div id="my-tab-content" class="tab-content">
+                                    <div class="tab-pane active" id="stories">
+                                        <g:render plugin="fieldcapture-plugin" template="editProjectContent" model="${[attributeName:'projectStories', header:'Project stories']}"/>
+                                     </div>
+                                    <div class="tab-pane active" id="iframe">
+                                        <g:render template="iframes" model="[project: project]"/>
+                                    </div>
+                                </div>
                             </div>
+
 
                             <div id="permissions" class="pill-pane ${activeClass}">
                                 <h3>Project Access</h3>
@@ -723,6 +741,14 @@
 				$(field).attr('maxlength',maxChar);
 			}
 
+			var IFrameViewModel = function(o) {
+			     var self = this;
+				 if(!o) o = {};
+				 //this.notes = ko.observable(o.notes);
+				 //this.enable = ko.observable(o.enable);
+				 this.iframe = ko.observable(o.iframe);
+            };
+
             function ViewModel(project, newsAndEvents, projectStories, sites, activities, isUserEditor,today,themes) {
                 var self = this;
                 self.name = ko.observable(project.name);
@@ -740,7 +766,13 @@
                 self.regenerateProjectTimeline = ko.observable(false);
 				self.userIsCaseManager = ko.observable(${user?.isCaseManager});
 				self.userIsAdmin = ko.observable(${user?.isAdmin});
-				
+
+				var row = [];
+            	project.iframes ? row = project.iframes : row.push(ko.mapping.toJS(new IFrameViewModel()));
+				self.iframes = ko.observableArray($.map(row, function (obj, i) {
+					return new IFrameViewModel(obj);
+			    }));
+
 				var projectDefault = "active";
 				if(project.status){
 					projectDefault = project.status; 
@@ -749,6 +781,13 @@
 				self.projectStatus = [{id: 'active', name:'Active'},{id:'completed',name:'Completed'}];
 				self.promote = [{id: 'yes', name:'Yes'},{id:'no',name:'No'}];
 				self.promoteOnHomepage = ko.observable(project.promoteOnHomepage);
+
+                self.addiframes = function(){
+					self.iframes.push(new IFrameViewModel());
+    			};
+    			self.removeiframes = function(iframe){
+                    self.iframes.remove(iframe)
+    			};
 
                 // todo: move this to mongodb lookup.
  	            self.threatOptions = [
@@ -1327,6 +1366,35 @@
 			                alert('Error saving document record');
             			});	 
                 };
+
+                self.saveiframes = function(){
+                     var payload = {};
+                     payload.iframes = ko.mapping.toJS(self.iframes);
+
+	               	 var json = JSON.stringify(payload, function (key, value) {
+                        return value === undefined ? "" : value;
+                     });
+
+                    $.ajax({
+                     url: "${createLink(action: 'ajaxUpdate', id: project.projectId)}",
+                     type: 'POST',
+                     data: json,
+                     contentType: 'application/json',
+                     success: function (data) {
+                         if (data.error) {
+                             showAlert("Error, "+ data.error,"alert-error","save-iframe-details-result-placeholder");
+
+                         } else {
+                            showAlert("Successfully saved.","alert-success","save-iframe-details-result-placeholder");
+                         }
+                     },
+                     error: function (data) {
+                         var status = data.status;
+                         alert('An unhandled error occurred: ' + data.status);
+                     }
+                    });
+                };
+
                 self.saveGrantManagerSettings = function () {
 
                     if ($('#grantmanager-validation').validationEngine('validate')) {
@@ -1654,6 +1722,25 @@
                 }).fail(function(j,t,e){ alert(t + ":" + e);}).done();
             }
         }
+
+         $('.zoom-gallery').magnificPopup({
+            delegate: 'a',
+            gallery: {
+                enabled: true
+            },
+
+            zoom : {
+                enabled: true,
+                duration: 300, // don't forget to change the duration also in CSS
+                opener: function(element) {
+                    return element.find('img');
+                }
+            },
+            image: {
+             titleSrc: 'title'
+            }
+
+        });
 </r:script>
 <g:if test="${user?.isAdmin || user?.isCaseManager}">
     <r:script>
